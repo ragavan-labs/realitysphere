@@ -1,69 +1,264 @@
-import Image from "next/image";
+"use client";
+
+import { FormEvent, useState } from "react";
+
+type EvidenceRecord = {
+  id: string;
+  claim: string;
+  verdict: "SUPPORTED" | "REFUTED";
+  explanation: string;
+  reasons: string[];
+  sourceName: string;
+  sourceUrl: string;
+  sourceType: string;
+  sourceDate: string;
+};
+
+type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  evidence?: EvidenceRecord[];
+};
+
+type ChatResponse = {
+  answer?: string;
+  evidence?: EvidenceRecord[];
+  error?: string;
+};
+
+function makeId() {
+  return `${Date.now()}-${Math.random()}`;
+}
 
 export default function Home() {
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: "welcome",
+      role: "assistant",
+      text: "Hi, I’m Realitysphere. Ask me about SRM KTR and I’ll answer using the official evidence currently available in my database."
+    }
+  ]);
+
+  async function sendMessage(event: FormEvent) {
+    event.preventDefault();
+
+    const question = input.trim();
+    if (!question || loading) return;
+
+    const userMessage: ChatMessage = {
+      id: makeId(),
+      role: "user",
+      text: question
+    };
+
+    setMessages((current) => [...current, userMessage]);
+    setInput("");
+    setLoading(true);
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          question
+        })
+      });
+
+      const data = (await response.json()) as ChatResponse;
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ?? "Realitysphere could not answer that right now."
+        );
+      }
+
+      setMessages((current) => [
+        ...current,
+        {
+          id: makeId(),
+          role: "assistant",
+          text:
+            data.answer ??
+            "I could not generate an answer from the available evidence.",
+          evidence: data.evidence ?? []
+        }
+      ]);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Realitysphere could not answer that right now.";
+
+      setMessages((current) => [
+        ...current,
+        {
+          id: makeId(),
+          role: "assistant",
+          text: message
+        }
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function clearChat() {
+    setMessages([
+      {
+        id: "welcome",
+        role: "assistant",
+        text: "New conversation started. Ask me about SRM KTR and I’ll use available official evidence."
+      }
+    ]);
+    setInput("");
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <main className="relative min-h-screen overflow-hidden bg-zinc-950 text-white">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 overflow-hidden"
+      >
+        <div className="absolute -left-40 top-12 h-[32rem] w-[32rem] rounded-full bg-blue-700/20 blur-3xl" />
+        <div className="absolute -right-40 bottom-0 h-[30rem] w-[30rem] rounded-full bg-purple-700/20 blur-3xl" />
+      </div>
+
+      <div className="relative z-10 flex min-h-screen flex-col">
+        <header className="border-b border-white/10 px-6 py-5">
+          <div className="mx-auto flex max-w-4xl items-center justify-between">
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight">
+                Realitysphere
+              </h1>
+              <p className="mt-1 text-sm text-zinc-400">
+                SRM KTR evidence assistant
+              </p>
+            </div>
+
+            <button
+              onClick={clearChat}
+              className="rounded-xl border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition hover:border-zinc-500 hover:bg-white/5"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+              New chat
+            </button>
+          </div>
+        </header>
+
+        <section className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-6 py-8">
+          <div className="flex-1 space-y-7 pb-8">
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={`flex gap-3 ${
+                  message.role === "user" ? "justify-end" : ""
+                }`}
+              >
+                {message.role === "assistant" && (
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white font-bold text-black">
+                    R
+                  </div>
+                )}
+
+                <div className="max-w-2xl">
+                  <div
+                    className={`rounded-2xl px-5 py-4 leading-7 ${
+                      message.role === "user"
+                        ? "bg-blue-600 text-white"
+                        : "border border-zinc-800 bg-zinc-900/90 text-zinc-100"
+                    }`}
+                  >
+                    {message.text}
+                  </div>
+
+                  {message.role === "assistant" &&
+                    message.evidence &&
+                    message.evidence.length > 0 && (
+                      <div className="mt-3 space-y-3">
+                        <p className="text-xs font-bold tracking-[0.15em] text-zinc-500">
+                          VERIFIED EVIDENCE USED
+                        </p>
+
+                        {message.evidence.map((record) => (
+                          <article
+                            key={record.id}
+                            className="rounded-xl border border-zinc-800 bg-black/30 p-4"
+                          >
+                            <p
+                              className={`text-xs font-bold tracking-[0.12em] ${
+                                record.verdict === "SUPPORTED"
+                                  ? "text-emerald-400"
+                                  : "text-red-400"
+                              }`}
+                            >
+                              {record.verdict}
+                            </p>
+
+                            <p className="mt-2 font-medium text-zinc-100">
+                              {record.claim}
+                            </p>
+
+                            <p className="mt-2 text-sm text-zinc-400">
+                              {record.sourceType} · {record.sourceDate}
+                            </p>
+
+                            <a
+                              href={record.sourceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-3 inline-block text-sm text-blue-400 underline underline-offset-4 hover:text-blue-300"
+                            >
+                              Open source: {record.sourceName}
+                            </a>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                </div>
+              </div>
+            ))}
+
+            {loading && (
+              <div className="flex gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white font-bold text-black">
+                  R
+                </div>
+
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-900/90 px-5 py-4 text-zinc-400">
+                  Checking verified SRM evidence
+                  <span className="animate-pulse">...</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <form
+            onSubmit={sendMessage}
+            className="sticky bottom-0 flex gap-3 border-t border-white/10 bg-zinc-950/80 py-5 backdrop-blur"
           >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
+            <input
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              placeholder="Ask about SRM KTR campus..."
+              disabled={loading}
+              className="min-w-0 flex-1 rounded-2xl border border-zinc-700 bg-zinc-900 px-5 py-4 outline-none placeholder:text-zinc-500 focus:border-blue-500 disabled:opacity-60"
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="rounded-2xl bg-white px-6 py-4 font-semibold text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Send
+            </button>
+          </form>
+        </section>
+      </div>
+    </main>
   );
 }

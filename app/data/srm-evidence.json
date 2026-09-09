@@ -1,0 +1,124 @@
+[
+  {
+    "id": "srm-ktr-location",
+    "claim": "SRM Kattankulathur campus is located near National Highway 45 and about 15 kilometres from Tambaram.",
+    "aliases": [
+      "Where is SRM KTR located?",
+      "How far is SRM KTR from Tambaram?",
+      "Is SRM KTR near Tambaram?"
+    ],
+    "verdict": "SUPPORTED",
+    "explanation": "The official SRM brochure places Kattankulathur campus next to NH45 and about 15 kilometres from Tambaram, Chennai.",
+    "reasons": [
+      "This is stated in SRMIST's official 2024-25 university brochure.",
+      "The source specifically identifies Kattankulathur as the main campus."
+    ],
+    "sourceName": "SRMIST University Brochure 2024-25",
+    "sourceUrl": "https://webstor.srmist.edu.in/web_assets/downloads/2024/srmist-university-brochure-2024-25.pdf",
+    "sourceType": "OFFICIAL DOCUMENT",
+    "sourceDate": "2024-25"
+  },
+  {
+    "id": "srm-ktr-shuttle",
+    "claim": "SRM Kattankulathur provides a free shuttle service within the campus.",
+    "aliases": [
+      "Does SRM KTR have a free shuttle?",
+      "Is there a shuttle service inside SRM KTR campus?",
+      "Does SRM provide internal campus transport?",
+      "Is campus shuttle free at SRM KTR?"
+    ],
+    "verdict": "SUPPORTED",
+    "explanation": "The official SRM brochure states that a free shuttle service operates within the Kattankulathur campus for students and faculty.",
+    "reasons": [
+      "The service is described as free within the campus.",
+      "The source applies specifically to Kattankulathur campus."
+    ],
+    "sourceName": "SRMIST University Brochure 2024-25",
+    "sourceUrl": "https://webstor.srmist.edu.in/web_assets/downloads/2024/srmist-university-brochure-2024-25.pdf",
+    "sourceType": "OFFICIAL DOCUMENT",
+    "sourceDate": "2024-25"
+  },
+  {
+    "id": "srm-ktr-facilities",
+    "claim": "SRM Kattankulathur has separate hostels, an international hostel, a hospital, and a campus shuttle.",
+    "aliases": [
+      "What facilities are available at SRM KTR?",
+      "Does SRM KTR have hostels?",
+      "Does SRM KTR have a hospital?",
+      "Is there an international hostel at SRM KTR?"
+    ],
+    "verdict": "SUPPORTED",
+    "explanation": "SRMIST's official brochure lists separate hostels, an international hostel, a 1600+-bedded hospital, and a free internal shuttle at Kattankulathur.",
+    "reasons": [
+      "The campus has separate hostel accommodation for men and women.",
+      "The brochure mentions an international hostel and a super-specialty hospital.",
+      "The listed facilities are for Kattankulathur campus."
+    ],
+    "sourceName": "SRMIST University Brochure 2024-25",
+    "sourceUrl": "https://webstor.srmist.edu.in/web_assets/downloads/2024/srmist-university-brochure-2024-25.pdf",
+    "sourceType": "OFFICIAL DOCUMENT",
+    "sourceDate": "2024-25"
+  },
+  {
+    "id": "srm-ktr-hostel-2026",
+    "claim": "First-year B.Tech and integrated M.Tech students can book SRM KTR hostel accommodation after online verification and Net ID generation.",
+    "aliases": [
+      "Can first year BTech students book SRM KTR hostel?",
+      "Who can book hostel at SRM KTR?",
+      "How can I book SRM KTR hostel?",
+      "Do I need Net ID for SRM KTR hostel booking?"
+    ],
+    "verdict": "SUPPORTED",
+    "explanation": "The official 2026-27 Kattankulathur hostel circular states that first-year B.Tech and integrated M.Tech students can book after online verification and Net ID generation.",
+    "reasons": [
+      "The source is a 2026-27 official Kattankulathur hostel circular.",
+      "It describes the eligibility and booking prerequisite for first-year students.",
+      "Room types and fees depend on the specific hostel circular."
+    ],
+    "sourceName": "Directorate of SRMIST Hostels, Kattankulathur",
+    "sourceUrl": "https://webstor.srmist.edu.in/web_assets/downloads/2026/circular-for-all-first-year-btech-and-mtech-2026-boys.pdf",
+    "sourceType": "OFFICIAL CURRENT CIRCULAR",
+    "sourceDate": "2026-27"
+  },
+  {
+    "id": "srm-ktr-events",
+    "claim": "SRM KTR has an official events directory with event dates, venues, descriptions, registration links, and contact details.",
+    "aliases": [
+      "Where can I find SRM KTR events?",
+      "Does SRM KTR have an events page?",
+      "How do I find upcoming events at SRM KTR?",
+      "Where are SRM KTR event details published?"
+    ],
+    "verdict": "SUPPORTED",
+    "explanation": "The official SRM events directory publishes KTR event details such as dates, venues, descriptions, registration links, and contact information.",
+    "reasons": [
+      "The source is an official SRM KTR events directory.",
+      "Individual event listings include venue and contact information.",
+      "Event details can change, so open the source link for the latest listing."
+    ],
+    "sourceName": "SRM KTR Events Directory",
+    "sourceUrl": "https://shbf.srmist.edu.in/events.php",
+    "sourceType": "OFFICIAL LIVE PAGE",
+    "sourceDate": "Checked 2026-09-09"
+  },
+  {
+    "id": "srm-ktr-careers",
+    "claim": "SRMIST publishes Kattankulathur job openings through its official careers portal.",
+    "aliases": [
+      "Are there jobs open at SRM KTR?",
+      "Where can I find SRM KTR job openings?",
+      "Does SRMIST have a careers page?",
+      "How do I find jobs at SRM Kattankulathur?"
+    ],
+    "verdict": "SUPPORTED",
+    "explanation": "SRMIST's official careers portal lists openings and identifies the campus for each role, including Kattankulathur positions.",
+    "reasons": [
+      "The careers portal is an official SRMIST source.",
+      "Current openings can change, so the source link should be checked for the latest listing."
+    ],
+    "sourceName": "SRMIST Careers",
+    "sourceUrl": "https://careers.srmist.edu.in/",
+    "sourceType": "OFFICIAL LIVE PAGE",
+    "sourceDate": "Checked 2026-09-09"
+  }
+]

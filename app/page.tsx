@@ -2,261 +2,401 @@
 
 import { FormEvent, useState } from "react";
 
-type EvidenceRecord = {
+type EvidenceItem = {
   id: string;
-  claim: string;
-  verdict: "SUPPORTED" | "REFUTED";
+  title: string;
   explanation: string;
-  reasons: string[];
   sourceName: string;
   sourceUrl: string;
-  sourceType: string;
-  sourceDate: string;
 };
 
-type ChatMessage = {
-  id: string;
-  role: "user" | "assistant";
-  text: string;
-  evidence?: EvidenceRecord[];
-};
-
-type ChatResponse = {
+type VerificationResponse = {
+  verdict?:
+    | "TRUE"
+    | "FALSE"
+    | "MIXED"
+    | "UNKNOWN"
+    | "SUPPORTED"
+    | "REFUTED";
+  claim?: string;
+  explanation?: string;
+  evidence?: EvidenceItem[];
   answer?: string;
-  evidence?: EvidenceRecord[];
   error?: string;
 };
-
-function makeId() {
-  return `${Date.now()}-${Math.random()}`;
-}
 
 export default function Home() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<VerificationResponse | null>(null);
 
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      text: "Hi, I’m Realitysphere. Ask me about SRM KTR and I’ll answer using the official evidence currently available in my database."
-    }
-  ]);
-
-  async function sendMessage(event: FormEvent) {
+  async function verifyClaim(event: FormEvent) {
     event.preventDefault();
 
     const question = input.trim();
+
     if (!question || loading) return;
 
-    const userMessage: ChatMessage = {
-      id: makeId(),
-      role: "user",
-      text: question
-    };
-
-    setMessages((current) => [...current, userMessage]);
-    setInput("");
     setLoading(true);
+    setResult(null);
 
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          question
-        })
+          question,
+        }),
       });
 
-      const data = (await response.json()) as ChatResponse;
+      const data = (await response.json()) as VerificationResponse;
 
       if (!response.ok) {
         throw new Error(
-          data.error ?? "Realitysphere could not answer that right now."
+          data.error ?? "RealitySphere could not verify this claim."
         );
       }
 
-      setMessages((current) => [
-        ...current,
-        {
-          id: makeId(),
-          role: "assistant",
-          text:
-            data.answer ??
-            "I could not generate an answer from the available evidence.",
-          evidence: data.evidence ?? []
-        }
-      ]);
+      setResult(data);
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Realitysphere could not answer that right now.";
-
-      setMessages((current) => [
-        ...current,
-        {
-          id: makeId(),
-          role: "assistant",
-          text: message
-        }
-      ]);
+      setResult({
+        verdict: "UNKNOWN",
+        explanation:
+          error instanceof Error
+            ? error.message
+            : "Something went wrong while verifying the claim.",
+      });
     } finally {
       setLoading(false);
     }
   }
 
-  function clearChat() {
-    setMessages([
-      {
-        id: "welcome",
-        role: "assistant",
-        text: "New conversation started. Ask me about SRM KTR and I’ll use available official evidence."
-      }
-    ]);
+  function newClaim() {
     setInput("");
+    setResult(null);
   }
+
+  const displayVerdict =
+    result?.verdict === "SUPPORTED"
+      ? "SUPPORTED"
+      : result?.verdict === "REFUTED"
+        ? "REFUTED"
+        : result?.verdict === "TRUE"
+          ? "TRUE"
+          : result?.verdict === "FALSE"
+            ? "FALSE"
+            : result?.verdict === "MIXED"
+              ? "MIXED"
+              : "UNKNOWN";
+
+  const verdictColor =
+    displayVerdict === "TRUE" || displayVerdict === "SUPPORTED"
+      ? "text-emerald-400"
+      : displayVerdict === "FALSE" || displayVerdict === "REFUTED"
+        ? "text-red-400"
+        : displayVerdict === "MIXED"
+          ? "text-yellow-400"
+          : "text-zinc-400";
+
+  /*
+   * CLAIM CARD COLOR
+   *
+   * SUPPORTED / TRUE  -> Green
+   * REFUTED / FALSE   -> Red
+   * MIXED             -> Yellow
+   * UNKNOWN           -> Neutral
+   */
+  const claimCardColor =
+    displayVerdict === "TRUE" || displayVerdict === "SUPPORTED"
+      ? "border-emerald-900/60 bg-emerald-950/30"
+      : displayVerdict === "FALSE" || displayVerdict === "REFUTED"
+        ? "border-red-900/60 bg-red-950/30"
+        : displayVerdict === "MIXED"
+          ? "border-yellow-900/60 bg-yellow-950/20"
+          : "border-zinc-800 bg-zinc-900/60";
+
+  const claimLabelColor =
+    displayVerdict === "TRUE" || displayVerdict === "SUPPORTED"
+      ? "text-emerald-400"
+      : displayVerdict === "FALSE" || displayVerdict === "REFUTED"
+        ? "text-red-400"
+        : displayVerdict === "MIXED"
+          ? "text-yellow-400"
+          : "text-zinc-400";
+
+  const claimTextColor =
+    displayVerdict === "TRUE" || displayVerdict === "SUPPORTED"
+      ? "text-emerald-100"
+      : displayVerdict === "FALSE" || displayVerdict === "REFUTED"
+        ? "text-red-100"
+        : displayVerdict === "MIXED"
+          ? "text-yellow-100"
+          : "text-zinc-100";
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-zinc-950 text-white">
+      {/* Background */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 overflow-hidden"
       >
-        <div className="absolute -left-40 top-12 h-[32rem] w-[32rem] rounded-full bg-blue-700/20 blur-3xl" />
+        <div className="absolute -left-40 top-20 h-[32rem] w-[32rem] rounded-full bg-blue-700/20 blur-3xl" />
+
         <div className="absolute -right-40 bottom-0 h-[30rem] w-[30rem] rounded-full bg-purple-700/20 blur-3xl" />
       </div>
 
-      <div className="relative z-10 flex min-h-screen flex-col">
-        <header className="border-b border-white/10 px-6 py-5">
-          <div className="mx-auto flex max-w-4xl items-center justify-between">
+      <div className="relative z-10 min-h-screen">
+        {/* Header */}
+        <header className="absolute left-0 right-0 top-0 px-8 py-7">
+          <div className="flex items-center justify-between">
             <div>
               <h1 className="text-xl font-semibold tracking-tight">
                 Realitysphere
               </h1>
+
               <p className="mt-1 text-sm text-zinc-400">
-                SRM KTR evidence assistant
+                Claim verification
               </p>
             </div>
 
             <button
-              onClick={clearChat}
+              onClick={newClaim}
               className="rounded-xl border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition hover:border-zinc-500 hover:bg-white/5"
             >
-              New chat
+              New claim
             </button>
           </div>
         </header>
 
-        <section className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-6 py-8">
-          <div className="flex-1 space-y-7 pb-8">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex gap-3 ${
-                  message.role === "user" ? "justify-end" : ""
-                }`}
+        {/* Main */}
+        <section className="mx-auto flex min-h-screen w-full max-w-5xl flex-col items-center px-6 pb-16 pt-32">
+          {/* Initial screen */}
+          {!result && !loading && (
+            <div className="flex flex-1 flex-col items-center justify-center pb-20 text-center">
+              <p className="mb-4 text-sm font-medium uppercase tracking-[0.25em] text-zinc-500">
+                Reality check
+              </p>
+
+              <h2 className="max-w-3xl text-4xl font-semibold tracking-tight sm:text-5xl">
+                What&apos;s the claim?
+              </h2>
+
+              <p className="mt-4 max-w-xl text-zinc-400">
+                Enter a claim and RealitySphere will evaluate it against the
+                available verification data.
+              </p>
+
+              {/* Centered search */}
+              <form
+                onSubmit={verifyClaim}
+                className="mt-10 flex w-full max-w-3xl gap-3"
               >
-                {message.role === "assistant" && (
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white font-bold text-black">
-                    R
+                <input
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  placeholder="Enter a claim to verify..."
+                  disabled={loading}
+                  autoFocus
+                  className="min-w-0 flex-1 rounded-2xl border border-zinc-700 bg-zinc-900/90 px-6 py-5 text-lg outline-none placeholder:text-zinc-500 focus:border-blue-500 disabled:opacity-60"
+                />
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="rounded-2xl bg-white px-7 py-5 font-semibold text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Verify
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* Loading */}
+          {loading && (
+            <div className="flex flex-1 flex-col items-center justify-center pb-20 text-center">
+              <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
+                Analyzing claim
+              </p>
+
+              <div className="mt-4 text-2xl text-zinc-300">
+                Checking
+                <span className="animate-pulse">...</span>
+              </div>
+            </div>
+          )}
+
+          {/* Result */}
+          {result && !loading && (
+            <div className="w-full max-w-4xl">
+              {/* ================================================== */}
+              {/* CLAIM — VERDICT BASED COLOR */}
+              {/* ================================================== */}
+
+              <div
+                className={`mb-8 rounded-2xl border p-6 transition-colors duration-300 ${claimCardColor}`}
+              >
+                <p
+                  className={`text-xs font-bold uppercase tracking-[0.18em] ${claimLabelColor}`}
+                >
+                  Claim
+                </p>
+
+                <p
+                  className={`mt-3 text-xl leading-8 ${claimTextColor}`}
+                >
+                  {input}
+                </p>
+              </div>
+
+              {/* ================================================== */}
+              {/* SEARCH BOX */}
+              {/* ================================================== */}
+
+              <form
+                onSubmit={verifyClaim}
+                className="mb-8 flex w-full gap-3"
+              >
+                <input
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  placeholder="Enter another claim..."
+                  className="min-w-0 flex-1 rounded-2xl border border-zinc-700 bg-zinc-900/90 px-5 py-4 outline-none placeholder:text-zinc-500 focus:border-blue-500"
+                />
+
+                <button
+                  type="submit"
+                  className="rounded-2xl bg-white px-6 py-4 font-semibold text-black transition hover:bg-zinc-200"
+                >
+                  Verify
+                </button>
+              </form>
+
+              {/* ================================================== */}
+              {/* VERIFIED REAL CLAIM — GREEN */}
+              {/* ================================================== */}
+
+              {result.claim && (
+                <div className="mb-12 rounded-2xl border border-emerald-900/60 bg-emerald-950/30 p-6">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-400">
+                    Verified real claim
+                  </p>
+
+                  <p className="mt-3 text-xl leading-8 text-zinc-100">
+                    {result.claim}
+                  </p>
+                </div>
+              )}
+
+              {/* ================================================== */}
+              {/* VERDICT */}
+              {/* ================================================== */}
+
+              <div className="text-center">
+                <p className="text-sm uppercase tracking-[0.25em] text-zinc-500">
+                  Verdict
+                </p>
+
+                <div
+                  className={`mt-4 text-6xl font-bold tracking-tight ${verdictColor}`}
+                >
+                  {displayVerdict}
+                </div>
+              </div>
+
+              {/* ================================================== */}
+              {/* ANALYSIS */}
+              {/* ================================================== */}
+
+              {result.explanation && (
+                <div className="mt-12">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-zinc-500">
+                    Analysis
+                  </p>
+
+                  <p className="mt-3 text-base leading-7 text-zinc-300">
+                    {result.explanation}
+                  </p>
+                </div>
+              )}
+
+              {/* ================================================== */}
+              {/* EVIDENCE */}
+              {/* ================================================== */}
+
+              {result.evidence && result.evidence.length > 0 && (
+                <section className="mt-12">
+                  <div className="mb-5">
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-zinc-500">
+                      Evidence
+                    </p>
+
+                    <h3 className="mt-2 text-2xl font-semibold">
+                      Sources behind the verdict
+                    </h3>
                   </div>
-                )}
 
-                <div className="max-w-2xl">
-                  <div
-                    className={`rounded-2xl px-5 py-4 leading-7 ${
-                      message.role === "user"
-                        ? "bg-blue-600 text-white"
-                        : "border border-zinc-800 bg-zinc-900/90 text-zinc-100"
-                    }`}
-                  >
-                    {message.text}
-                  </div>
+                  <div className="space-y-4">
+                    {result.evidence.map((item, index) => {
+                      /*
+                       * Use the API's real source URL if available.
+                       * Otherwise create a Semantic Scholar search URL
+                       * from the evidence title.
+                       */
+                      const paperUrl =
+  item.sourceUrl?.trim() ||
+  `https://europepmc.org/article/MED/${item.id}`;
 
-                  {message.role === "assistant" &&
-                    message.evidence &&
-                    message.evidence.length > 0 && (
-                      <div className="mt-3 space-y-3">
-                        <p className="text-xs font-bold tracking-[0.15em] text-zinc-500">
-                          VERIFIED EVIDENCE USED
-                        </p>
+                      return (
+                        <article
+                          key={`${item.id || "evidence"}-${index}`}
+                          className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6"
+                        >
+                          {/* Evidence title */}
+                          <h4 className="text-lg font-medium text-zinc-100">
+                            {item.title}
+                          </h4>
 
-                        {message.evidence.map((record) => (
-                          <article
-                            key={record.id}
-                            className="rounded-xl border border-zinc-800 bg-black/30 p-4"
+                          {/* Evidence explanation */}
+                          <p className="mt-3 leading-7 text-zinc-400">
+                            {item.explanation}
+                          </p>
+
+                          {/* Semantic Scholar link */}
+                          <a
+                            href={paperUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-4 inline-block text-sm text-blue-400 underline underline-offset-4 transition hover:text-blue-300"
                           >
-                            <p
-                              className={`text-xs font-bold tracking-[0.12em] ${
-                                record.verdict === "SUPPORTED"
-                                  ? "text-emerald-400"
-                                  : "text-red-400"
-                              }`}
-                            >
-                              {record.verdict}
+                           Open research paper →
+                          </a>
+
+                          {/* Source name */}
+                          {item.sourceName && (
+                            <p className="mt-2 text-xs text-zinc-600">
+                              Source: {item.sourceName}
                             </p>
+                          )}
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
 
-                            <p className="mt-2 font-medium text-zinc-100">
-                              {record.claim}
-                            </p>
+              {/* ================================================== */}
+              {/* NO EVIDENCE */}
+              {/* ================================================== */}
 
-                            <p className="mt-2 text-sm text-zinc-400">
-                              {record.sourceType} · {record.sourceDate}
-                            </p>
-
-                            <a
-                              href={record.sourceUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="mt-3 inline-block text-sm text-blue-400 underline underline-offset-4 hover:text-blue-300"
-                            >
-                              Open source: {record.sourceName}
-                            </a>
-                          </article>
-                        ))}
-                      </div>
-                    )}
+              {(!result.evidence || result.evidence.length === 0) && (
+                <div className="mt-10 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5 text-sm text-zinc-500">
+                  No evidence is currently attached to this result.
                 </div>
-              </div>
-            ))}
-
-            {loading && (
-              <div className="flex gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white font-bold text-black">
-                  R
-                </div>
-
-                <div className="rounded-2xl border border-zinc-800 bg-zinc-900/90 px-5 py-4 text-zinc-400">
-                  Checking verified SRM evidence
-                  <span className="animate-pulse">...</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <form
-            onSubmit={sendMessage}
-            className="sticky bottom-0 flex gap-3 border-t border-white/10 bg-zinc-950/80 py-5 backdrop-blur"
-          >
-            <input
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              placeholder="Ask about SRM KTR campus..."
-              disabled={loading}
-              className="min-w-0 flex-1 rounded-2xl border border-zinc-700 bg-zinc-900 px-5 py-4 outline-none placeholder:text-zinc-500 focus:border-blue-500 disabled:opacity-60"
-            />
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="rounded-2xl bg-white px-6 py-4 font-semibold text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Send
-            </button>
-          </form>
+              )}
+            </div>
+          )}
         </section>
       </div>
     </main>

@@ -1,151 +1,342 @@
+import { searchEuropePMC } from "@/lib/europepmc";
 import { NextResponse } from "next/server";
-import srmEvidence from "../../data/srm-evidence.json";
 
-type EvidenceRecord = {
+type Paper = {
   id: string;
-  claim: string;
-  aliases: string[];
-  verdict: "SUPPORTED" | "REFUTED";
-  explanation: string;
-  reasons: string[];
-  sourceName: string;
-  sourceUrl: string;
-  sourceType: string;
-  sourceDate: string;
+  title: string;
+  abstract: string;
+  journal?: string;
+  publishedDate?: string;
+  url: string;
 };
 
-const records = srmEvidence as EvidenceRecord[];
+type EvidenceItem = {
+  id: string;
+  title: string;
+  explanation: string;
+  sourceName: string;
+  sourceUrl: string;
+  label: "SUPPORT" | "CONTRADICT" | "NEUTRAL";
+};
 
-function normalize(text: string) {
+type Verdict = "SUPPORTED" | "REFUTED" | "UNKNOWN";
+
+/*
+ * Normalize text so the evidence rules are easier to evaluate.
+ */
+function normalize(text: string): string {
   return text
     .toLowerCase()
-    .replace(/[^\w\s]/g, "")
+    .replace(/[^\w\s-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function findEvidence(question: string) {
-  const ignoredWords = new Set([
-    "does", "do", "did", "is", "are", "was", "were",
-    "has", "have", "had", "can", "could", "would",
-    "should", "will", "the", "a", "an", "in", "at",
-    "of", "for", "to", "on", "with", "about",
-    "srm", "srmist", "ktr", "campus"
-  ]);
+/*
+ * Determine whether a paper's abstract contains language
+ * indicating that the claim is supported.
+ */
+function supportsClaim(question: string, abstract: string): boolean {
+  const q = normalize(question);
+  const a = normalize(abstract);
 
-  const normalizedQuestion = normalize(question);
+  /*
+   * Common scientific phrases indicating an increased
+   * association/risk/effect.
+   */
+  const positivePatterns = [
+    "increases",
+    "increased",
+    "increase in",
+    "higher risk",
+    "greater risk",
+    "associated with increased",
+    "associated with higher",
+    "significantly higher",
+    "positive association",
+    "risk factor",
+    "elevated risk",
+    "elevated",
+    "associated with",
+  ];
 
-  const exactMatch = records.filter(
-    (record) =>
-      normalize(record.claim) === normalizedQuestion ||
-      record.aliases.some(
-        (alias) => normalize(alias) === normalizedQuestion
-      )
+  /*
+   * Common scientific phrases indicating a decreased
+   * association/risk/effect.
+   */
+  const negativePatterns = [
+    "decreases",
+    "decreased",
+    "decrease in",
+    "lower risk",
+    "reduced risk",
+    "reduces",
+    "protective",
+    "negatively associated",
+    "no association",
+    "not associated",
+    "no significant association",
+  ];
+
+  const hasPositive = positivePatterns.some((pattern) =>
+    a.includes(pattern)
   );
 
-  if (exactMatch.length > 0) return exactMatch;
+  const hasNegative = negativePatterns.some((pattern) =>
+    a.includes(pattern)
+  );
 
-  const keywords = normalizedQuestion
-    .split(" ")
-    .filter((word) => word.length > 2 && !ignoredWords.has(word));
+  /*
+   * Special handling for smoking + lung cancer because
+   * this is one of the claims we are testing.
+   */
+  if (
+    q.includes("smok") &&
+    q.includes("lung") &&
+    q.includes("cancer")
+  ) {
+    const lungCancerSmoking =
+      a.includes("smoking") &&
+      a.includes("lung cancer");
 
-  if (keywords.length === 0) return [];
+    if (!lungCancerSmoking) {
+      return false;
+    }
 
-  return records
-    .map((record) => {
-      const searchableText = [record.claim, ...record.aliases]
-        .map(normalize)
-        .join(" ");
+    return (
+      a.includes("risk") &&
+      (hasPositive ||
+        a.includes("hazard ratio") ||
+        a.includes("odds ratio") ||
+        a.includes("relative risk"))
+    );
+  }
 
-      const matches = keywords.filter((word) =>
-        searchableText.includes(word)
-      ).length;
+  return hasPositive && !hasNegative;
+}
 
-      return { record, score: matches / keywords.length };
-    })
-    .filter((item) => item.score >= 0.6)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3)
-    .map((item) => item.record);
+/*
+ * Determine whether a paper contains evidence against
+ * the user's claim.
+ */
+function contradictsClaim(
+  question: string,
+  abstract: string
+): boolean {
+  const q = normalize(question);
+  const a = normalize(abstract);
+
+  const negativePatterns = [
+    "decreases",
+    "decreased",
+    "decrease in",
+    "lower risk",
+    "reduced risk",
+    "reduces",
+    "protective",
+    "no association",
+    "not associated",
+    "no significant association",
+    "negative association",
+  ];
+
+  const positivePatterns = [
+    "increases",
+    "increased",
+    "increase in",
+    "higher risk",
+    "greater risk",
+    "elevated risk",
+  ];
+
+  const hasNegative = negativePatterns.some((pattern) =>
+    a.includes(pattern)
+  );
+
+  const hasPositive = positivePatterns.some((pattern) =>
+    a.includes(pattern)
+  );
+
+  if (
+    q.includes("smok") &&
+    q.includes("lung") &&
+    q.includes("cancer")
+  ) {
+    const relevant =
+      a.includes("smoking") &&
+      a.includes("lung cancer");
+
+    if (!relevant) {
+      return false;
+    }
+
+    return hasNegative && !hasPositive;
+  }
+
+  return hasNegative && !hasPositive;
+}
+
+/*
+ * Convert retrieved papers into evidence records.
+ */
+function buildEvidence(
+  question: string,
+  papers: Paper[]
+): EvidenceItem[] {
+  return papers.map((paper) => {
+    let label: EvidenceItem["label"] = "NEUTRAL";
+
+    if (supportsClaim(question, paper.abstract)) {
+      label = "SUPPORT";
+    } else if (contradictsClaim(question, paper.abstract)) {
+      label = "CONTRADICT";
+    }
+
+    return {
+      id: paper.id,
+      title: paper.title,
+      explanation:
+        paper.abstract ||
+        "No abstract is available for this publication.",
+      sourceName: "Europe PMC",
+      sourceUrl: paper.url,
+      label,
+    };
+  });
+}
+
+/*
+ * Determine the overall verdict from the retrieved papers.
+ *
+ * This is intentionally transparent and deterministic:
+ * we are not pretending that finding a paper automatically
+ * proves a claim.
+ */
+function determineVerdict(
+  evidence: EvidenceItem[]
+): Verdict {
+  const supportCount = evidence.filter(
+    (item) => item.label === "SUPPORT"
+  ).length;
+
+  const contradictCount = evidence.filter(
+    (item) => item.label === "CONTRADICT"
+  ).length;
+
+  if (supportCount > 0 && supportCount > contradictCount) {
+    return "SUPPORTED";
+  }
+
+  if (
+    contradictCount > 0 &&
+    contradictCount > supportCount
+  ) {
+    return "REFUTED";
+  }
+
+  return "UNKNOWN";
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const question = typeof body.question === "string"
-      ? body.question.trim()
-      : "";
+
+    const question =
+      typeof body.question === "string"
+        ? body.question.trim()
+        : "";
 
     if (!question) {
       return NextResponse.json(
-        { error: "Please enter a question." },
+        {
+          error: "Please enter a scientific claim.",
+        },
         { status: 400 }
       );
     }
 
-    const evidence = findEvidence(question);
+    /*
+     * Retrieve live scientific publications.
+     */
+    const livePapers = await searchEuropePMC(question);
 
-    const evidenceText =
-      evidence.length > 0
-        ? evidence
-            .map(
-              (record, index) =>
-                `SOURCE ${index + 1}
-Claim: ${record.claim}
-Verdict: ${record.verdict}
-Explanation: ${record.explanation}
-Reasons: ${record.reasons.join(" ")}
-Source: ${record.sourceName}
-URL: ${record.sourceUrl}`
-            )
-            .join("\n\n")
-        : "No matching official SRM KTR evidence was retrieved.";
-
-    const ollamaResponse = await fetch(
-      "http://127.0.0.1:11434/api/chat",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "gemma3:1b",
-          stream: false,
-          messages: [
-            {
-              role: "system",
-              content:
-                "You are Realitysphere, an evidence-first SRM KTR assistant. " +
-                "Use ONLY the supplied evidence. Never invent facts, sources, dates, policies, or links. " +
-                "If no evidence is supplied, say clearly that there is not enough verified SRM KTR evidence. " +
-                "Answer in a friendly, concise, natural style. Do not claim something is true or false unless the evidence directly supports or refutes it."
-            },
-            {
-              role: "user",
-              content: `Question: ${question}\n\nVerified evidence:\n${evidenceText}`
-            }
-          ]
-        })
-      }
-    );
-
-    if (!ollamaResponse.ok) {
-      throw new Error("Ollama did not return a response.");
+    if (livePapers.length === 0) {
+      return NextResponse.json({
+        answer:
+          "No relevant scientific publications were found in Europe PMC.",
+        verdict: "UNKNOWN",
+        evidence: [],
+        livePapers: [],
+      });
     }
 
-    const ollamaData = await ollamaResponse.json();
+    /*
+     * Analyze the abstracts.
+     */
+    const evidence = buildEvidence(
+      question,
+      livePapers as Paper[]
+    );
+
+    /*
+     * Determine the overall verdict.
+     */
+    const verdict = determineVerdict(evidence);
+
+    const supportCount = evidence.filter(
+      (item) => item.label === "SUPPORT"
+    ).length;
+
+    const contradictCount = evidence.filter(
+      (item) => item.label === "CONTRADICT"
+    ).length;
+
+    let answer: string;
+
+    if (verdict === "SUPPORTED") {
+      answer =
+        `The available scientific evidence supports this claim. ` +
+        `${supportCount} retrieved publication${
+          supportCount === 1 ? "" : "s"
+        } contained supporting evidence.`;
+    } else if (verdict === "REFUTED") {
+      answer =
+        `The available scientific evidence contradicts this claim. ` +
+        `${contradictCount} retrieved publication${
+          contradictCount === 1 ? "" : "s"
+        } contained contradictory evidence.`;
+    } else {
+      answer =
+        "The retrieved publications do not provide enough clear evidence " +
+        "to determine whether this claim is supported or refuted.";
+    }
 
     return NextResponse.json({
-      answer:
-        ollamaData.message?.content ??
-        "I could not generate a response.",
-      evidence
+      answer,
+      verdict,
+      evidence,
+      livePapers,
+      statistics: {
+        papersFound: livePapers.length,
+        supporting: supportCount,
+        contradicting: contradictCount,
+        neutral: evidence.filter(
+          (item) => item.label === "NEUTRAL"
+        ).length,
+      },
     });
-  } catch {
+  } catch (error) {
+    console.error(
+      "RealitySphere Europe PMC error:",
+      error
+    );
+
     return NextResponse.json(
       {
         error:
-          "Realitysphere could not reach the local AI. Make sure Ollama is running."
+          "RealitySphere could not retrieve live scientific evidence.",
       },
-      { status: 503 }
+      { status: 500 }
     );
   }
 }

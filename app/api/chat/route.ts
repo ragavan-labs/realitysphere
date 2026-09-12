@@ -1,241 +1,25 @@
-import { searchEuropePMC } from "@/lib/europepmc";
 import { NextResponse } from "next/server";
+import { GoogleGenAI } from "@google/genai";
 
-type Paper = {
+import { supabase } from "@/lib/supabase";
+
+import {
+  classifyEvidence,
+  reasonOverEvidence,
+} from "@/lib/gemini";
+
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY!,
+});
+
+type Candidate = {
   id: string;
-  title: string;
-  abstract: string;
-  journal?: string;
-  publishedDate?: string;
-  url: string;
+  paper_id: string;
+  content: string;
+  vectorRank?: number;
+  keywordRank?: number;
+  hybridScore: number;
 };
-
-type EvidenceItem = {
-  id: string;
-  title: string;
-  explanation: string;
-  sourceName: string;
-  sourceUrl: string;
-  label: "SUPPORT" | "CONTRADICT" | "NEUTRAL";
-};
-
-type Verdict = "SUPPORTED" | "REFUTED" | "UNKNOWN";
-
-/*
- * Normalize text so the evidence rules are easier to evaluate.
- */
-function normalize(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/*
- * Determine whether a paper's abstract contains language
- * indicating that the claim is supported.
- */
-function supportsClaim(question: string, abstract: string): boolean {
-  const q = normalize(question);
-  const a = normalize(abstract);
-
-  /*
-   * Common scientific phrases indicating an increased
-   * association/risk/effect.
-   */
-  const positivePatterns = [
-    "increases",
-    "increased",
-    "increase in",
-    "higher risk",
-    "greater risk",
-    "associated with increased",
-    "associated with higher",
-    "significantly higher",
-    "positive association",
-    "risk factor",
-    "elevated risk",
-    "elevated",
-    "associated with",
-  ];
-
-  /*
-   * Common scientific phrases indicating a decreased
-   * association/risk/effect.
-   */
-  const negativePatterns = [
-    "decreases",
-    "decreased",
-    "decrease in",
-    "lower risk",
-    "reduced risk",
-    "reduces",
-    "protective",
-    "negatively associated",
-    "no association",
-    "not associated",
-    "no significant association",
-  ];
-
-  const hasPositive = positivePatterns.some((pattern) =>
-    a.includes(pattern)
-  );
-
-  const hasNegative = negativePatterns.some((pattern) =>
-    a.includes(pattern)
-  );
-
-  /*
-   * Special handling for smoking + lung cancer because
-   * this is one of the claims we are testing.
-   */
-  if (
-    q.includes("smok") &&
-    q.includes("lung") &&
-    q.includes("cancer")
-  ) {
-    const lungCancerSmoking =
-      a.includes("smoking") &&
-      a.includes("lung cancer");
-
-    if (!lungCancerSmoking) {
-      return false;
-    }
-
-    return (
-      a.includes("risk") &&
-      (hasPositive ||
-        a.includes("hazard ratio") ||
-        a.includes("odds ratio") ||
-        a.includes("relative risk"))
-    );
-  }
-
-  return hasPositive && !hasNegative;
-}
-
-/*
- * Determine whether a paper contains evidence against
- * the user's claim.
- */
-function contradictsClaim(
-  question: string,
-  abstract: string
-): boolean {
-  const q = normalize(question);
-  const a = normalize(abstract);
-
-  const negativePatterns = [
-    "decreases",
-    "decreased",
-    "decrease in",
-    "lower risk",
-    "reduced risk",
-    "reduces",
-    "protective",
-    "no association",
-    "not associated",
-    "no significant association",
-    "negative association",
-  ];
-
-  const positivePatterns = [
-    "increases",
-    "increased",
-    "increase in",
-    "higher risk",
-    "greater risk",
-    "elevated risk",
-  ];
-
-  const hasNegative = negativePatterns.some((pattern) =>
-    a.includes(pattern)
-  );
-
-  const hasPositive = positivePatterns.some((pattern) =>
-    a.includes(pattern)
-  );
-
-  if (
-    q.includes("smok") &&
-    q.includes("lung") &&
-    q.includes("cancer")
-  ) {
-    const relevant =
-      a.includes("smoking") &&
-      a.includes("lung cancer");
-
-    if (!relevant) {
-      return false;
-    }
-
-    return hasNegative && !hasPositive;
-  }
-
-  return hasNegative && !hasPositive;
-}
-
-/*
- * Convert retrieved papers into evidence records.
- */
-function buildEvidence(
-  question: string,
-  papers: Paper[]
-): EvidenceItem[] {
-  return papers.map((paper) => {
-    let label: EvidenceItem["label"] = "NEUTRAL";
-
-    if (supportsClaim(question, paper.abstract)) {
-      label = "SUPPORT";
-    } else if (contradictsClaim(question, paper.abstract)) {
-      label = "CONTRADICT";
-    }
-
-    return {
-      id: paper.id,
-      title: paper.title,
-      explanation:
-        paper.abstract ||
-        "No abstract is available for this publication.",
-      sourceName: "Europe PMC",
-      sourceUrl: paper.url,
-      label,
-    };
-  });
-}
-
-/*
- * Determine the overall verdict from the retrieved papers.
- *
- * This is intentionally transparent and deterministic:
- * we are not pretending that finding a paper automatically
- * proves a claim.
- */
-function determineVerdict(
-  evidence: EvidenceItem[]
-): Verdict {
-  const supportCount = evidence.filter(
-    (item) => item.label === "SUPPORT"
-  ).length;
-
-  const contradictCount = evidence.filter(
-    (item) => item.label === "CONTRADICT"
-  ).length;
-
-  if (supportCount > 0 && supportCount > contradictCount) {
-    return "SUPPORTED";
-  }
-
-  if (
-    contradictCount > 0 &&
-    contradictCount > supportCount
-  ) {
-    return "REFUTED";
-  }
-
-  return "UNKNOWN";
-}
 
 export async function POST(request: Request) {
   try {
@@ -255,86 +39,559 @@ export async function POST(request: Request) {
       );
     }
 
-    /*
-     * Retrieve live scientific publications.
-     */
-    const livePapers = await searchEuropePMC(question);
+    console.log("\n==============================");
+    console.log("REALITYSPHERE CLAIM:");
+    console.log(question);
+    console.log("==============================");
 
-    if (livePapers.length === 0) {
+    /*
+     * ==========================================================
+     * 1. EMBED CLAIM
+     * ==========================================================
+     */
+
+    console.log("\n========== EMBEDDING ==========");
+
+    const embeddingResponse =
+      await ai.models.embedContent({
+        model: "gemini-embedding-2",
+        contents: question,
+        config: {
+          outputDimensionality: 768,
+        },
+      });
+
+    const queryEmbedding =
+      embeddingResponse.embeddings?.[0]?.values;
+
+    if (!queryEmbedding) {
+      throw new Error(
+        "Gemini returned no query embedding."
+      );
+    }
+
+    /*
+     * ==========================================================
+     * 2. VECTOR SEARCH
+     * ==========================================================
+     */
+
+    const {
+      data: vectorResults,
+      error: vectorError,
+    } = await supabase.rpc("match_chunks", {
+      query_embedding: queryEmbedding,
+      match_count: 20,
+    });
+
+    if (vectorError) {
+      throw new Error(
+        `Vector search failed: ${vectorError.message}`
+      );
+    }
+
+    /*
+     * ==========================================================
+     * 3. KEYWORD SEARCH
+     * ==========================================================
+     */
+
+    const {
+      data: keywordResults,
+      error: keywordError,
+    } = await supabase.rpc(
+      "search_chunks_keyword",
+      {
+        query_text: question,
+        match_count: 20,
+      }
+    );
+
+    if (keywordError) {
+      throw new Error(
+        `Keyword search failed: ${keywordError.message}`
+      );
+    }
+
+    /*
+     * ==========================================================
+     * 4. RRF HYBRID RETRIEVAL
+     * ==========================================================
+     */
+
+    const candidates = new Map<
+      string,
+      Candidate
+    >();
+
+    (vectorResults ?? []).forEach(
+      (item: any, index: number) => {
+        candidates.set(item.id, {
+          id: item.id,
+          paper_id: item.paper_id,
+          content: item.content,
+          vectorRank: index + 1,
+          hybridScore:
+            1 / (60 + index + 1),
+        });
+      }
+    );
+
+    (keywordResults ?? []).forEach(
+      (item: any, index: number) => {
+        const existing =
+          candidates.get(item.id);
+
+        if (existing) {
+          existing.keywordRank =
+            index + 1;
+
+          existing.hybridScore +=
+            1 / (60 + index + 1);
+        } else {
+          candidates.set(item.id, {
+            id: item.id,
+            paper_id: item.paper_id,
+            content: item.content,
+            keywordRank: index + 1,
+            hybridScore:
+              1 / (60 + index + 1),
+          });
+        }
+      }
+    );
+
+    const hybridResults =
+      Array.from(candidates.values())
+        .sort(
+          (a, b) =>
+            b.hybridScore -
+            a.hybridScore
+        )
+        .slice(0, 20);
+
+    console.log(
+      "\n========== RETRIEVAL =========="
+    );
+
+    console.log(
+      "Vector results:",
+      vectorResults?.length ?? 0
+    );
+
+    console.log(
+      "Keyword results:",
+      keywordResults?.length ?? 0
+    );
+
+    console.log(
+      "Hybrid results:",
+      hybridResults.length
+    );
+
+    hybridResults
+      .slice(0, 8)
+      .forEach((item, index) => {
+        console.log(
+          `\n--- RETRIEVED ${index + 1} ---`
+        );
+
+        console.log(
+          "ID:",
+          item.id
+        );
+
+        console.log(
+          "PAPER:",
+          item.paper_id
+        );
+
+        console.log(
+          "SCORE:",
+          item.hybridScore
+        );
+
+        console.log(
+          "CONTENT:",
+          item.content.slice(
+            0,
+            1000
+          )
+        );
+      });
+
+    /*
+     * ==========================================================
+     * NO EVIDENCE
+     * ==========================================================
+     */
+
+    if (hybridResults.length === 0) {
       return NextResponse.json({
         answer:
-          "No relevant scientific publications were found in Europe PMC.",
+          "No relevant scientific evidence was found in the indexed arXiv corpus.",
+
         verdict: "UNKNOWN",
+
+        reasoning:
+          "The indexed corpus did not contain sufficient evidence to evaluate the claim.",
+
         evidence: [],
+
         livePapers: [],
+
+        statistics: {
+          papersFound: 0,
+          evidenceFound: 0,
+          supporting: 0,
+          contradicting: 0,
+          neutral: 0,
+        },
       });
     }
 
     /*
-     * Analyze the abstracts.
+     * ==========================================================
+     * 5. TOP 8 EVIDENCE
+     *
+     * BGE is intentionally not used here for now because
+     * Windows is blocking the PyTorch DLL in the local
+     * virtual environment.
+     * ==========================================================
      */
-    const evidence = buildEvidence(
-      question,
-      livePapers as Paper[]
+
+    const topEvidence =
+      hybridResults
+        .slice(0, 8)
+        .map((item) => ({
+          id: item.id,
+          paper_id: item.paper_id,
+          content: item.content,
+          rerank_score:
+            item.hybridScore,
+        }));
+
+    /*
+     * ==========================================================
+     * 6. FETCH PAPER METADATA
+     * ==========================================================
+     */
+
+    const paperIds = [
+      ...new Set(
+        topEvidence.map(
+          (item) => item.paper_id
+        )
+      ),
+    ];
+
+    const {
+      data: papers,
+      error: papersError,
+    } = await supabase
+      .from("papers")
+      .select(
+        "id, arxiv_id, title, abstract, authors, published_at, pdf_url"
+      )
+      .in("id", paperIds);
+
+    if (papersError) {
+      throw new Error(
+        `Paper lookup failed: ${papersError.message}`
+      );
+    }
+
+    const paperMap = new Map(
+      (papers ?? []).map((paper) => [
+        paper.id,
+        paper,
+      ])
     );
 
     /*
-     * Determine the overall verdict.
+     * ==========================================================
+     * 7. EVIDENCE CLASSIFICATION
+     * ==========================================================
      */
-    const verdict = determineVerdict(evidence);
 
-    const supportCount = evidence.filter(
-      (item) => item.label === "SUPPORT"
-    ).length;
+    console.log(
+      "\n========== CLASSIFICATION =========="
+    );
 
-    const contradictCount = evidence.filter(
-      (item) => item.label === "CONTRADICT"
-    ).length;
+    const classifications =
+      await classifyEvidence(
+        question,
+        topEvidence.map((item) => {
+          const paper =
+            paperMap.get(
+              item.paper_id
+            );
 
-    let answer: string;
+          return {
+            id: item.id,
 
-    if (verdict === "SUPPORTED") {
-      answer =
-        `The available scientific evidence supports this claim. ` +
-        `${supportCount} retrieved publication${
-          supportCount === 1 ? "" : "s"
-        } contained supporting evidence.`;
-    } else if (verdict === "REFUTED") {
-      answer =
-        `The available scientific evidence contradicts this claim. ` +
-        `${contradictCount} retrieved publication${
-          contradictCount === 1 ? "" : "s"
-        } contained contradictory evidence.`;
-    } else {
-      answer =
-        "The retrieved publications do not provide enough clear evidence " +
-        "to determine whether this claim is supported or refuted.";
-    }
+            title:
+              paper?.title ??
+              "Unknown arXiv paper",
+
+            content: item.content,
+          };
+        })
+      );
+
+    const classificationMap =
+      new Map(
+        classifications.map(
+          (item) => [
+            item.id,
+            item,
+          ]
+        )
+      );
+
+    /*
+     * Make sure every retrieved passage gets
+     * a classification.
+     *
+     * If Gemini accidentally omits one,
+     * safely mark it NEUTRAL.
+     */
+
+    const classifiedEvidence =
+      topEvidence.map((item) => {
+        const paper =
+          paperMap.get(
+            item.paper_id
+          );
+
+        const classification =
+          classificationMap.get(
+            item.id
+          );
+
+        return {
+          id: item.id,
+
+          title:
+            paper?.title ??
+            "Unknown arXiv paper",
+
+          content: item.content,
+
+          url: paper
+            ? `https://arxiv.org/abs/${paper.arxiv_id}`
+            : "",
+
+          relation:
+            classification?.relation ??
+            "NEUTRAL",
+
+          classificationReasoning:
+            classification?.reasoning ??
+            "The evidence was retrieved as relevant, but no direct support or contradiction was established.",
+        };
+      });
+
+    classifiedEvidence.forEach(
+      (item) => {
+        console.log(
+          item.relation,
+          "|",
+          item.id
+        );
+
+        console.log(
+          item.classificationReasoning
+        );
+      }
+    );
+
+    /*
+     * ==========================================================
+     * 8. AGGREGATION
+     * ==========================================================
+     */
+
+    const supporting =
+      classifiedEvidence.filter(
+        (item) =>
+          item.relation ===
+          "SUPPORTS"
+      ).length;
+
+    const contradicting =
+      classifiedEvidence.filter(
+        (item) =>
+          item.relation ===
+          "CONTRADICTS"
+      ).length;
+
+    const neutral =
+      classifiedEvidence.filter(
+        (item) =>
+          item.relation ===
+          "NEUTRAL"
+      ).length;
+
+    console.log(
+      "\n========== AGGREGATION =========="
+    );
+
+    console.log(
+      "Supporting:",
+      supporting
+    );
+
+    console.log(
+      "Contradicting:",
+      contradicting
+    );
+
+    console.log(
+      "Neutral:",
+      neutral
+    );
+
+    /*
+     * ==========================================================
+     * 9. FINAL GEMINI JUDGE
+     * ==========================================================
+     */
+
+    console.log(
+      "\n========== FINAL JUDGE =========="
+    );
+
+    const geminiResult =
+      await reasonOverEvidence(
+        question,
+        classifiedEvidence
+      );
+
+    console.log(
+      "Verdict:",
+      geminiResult.verdict
+    );
+
+    console.log(
+      "Reasoning:",
+      geminiResult.reasoning
+    );
+
+    /*
+     * ==========================================================
+     * 10. FRONTEND EVIDENCE
+     * ==========================================================
+     */
+
+    const evidence =
+      topEvidence.map((item) => {
+        const paper =
+          paperMap.get(
+            item.paper_id
+          );
+
+        const classification =
+          classificationMap.get(
+            item.id
+          );
+
+        return {
+          id: item.id,
+
+          title:
+            paper?.title ??
+            "Unknown arXiv paper",
+
+          explanation:
+            item.content,
+
+          sourceName: "arXiv",
+
+          sourceUrl: paper
+            ? `https://arxiv.org/abs/${paper.arxiv_id}`
+            : "",
+
+          label:
+            classification?.relation ??
+            "NEUTRAL",
+
+          classificationReasoning:
+            classification?.reasoning ??
+            "No direct support or contradiction was established.",
+
+          rerankScore:
+            item.rerank_score,
+        };
+      });
+
+    /*
+     * ==========================================================
+     * 11. PAPER LIST
+     * ==========================================================
+     */
+
+    const livePapers =
+      (papers ?? []).map((paper) => ({
+        id: paper.id,
+
+        title: paper.title,
+
+        abstract:
+          paper.abstract ?? "",
+
+        url: `https://arxiv.org/abs/${paper.arxiv_id}`,
+      }));
+
+    /*
+     * ==========================================================
+     * 12. FINAL RESPONSE
+     * ==========================================================
+     */
 
     return NextResponse.json({
-      answer,
-      verdict,
+      answer:
+        geminiResult.reasoning,
+
+      verdict:
+        geminiResult.verdict,
+
+      reasoning:
+        geminiResult.reasoning,
+
+      evidenceIds:
+        geminiResult.evidenceIds,
+
       evidence,
+
       livePapers,
+
       statistics: {
-        papersFound: livePapers.length,
-        supporting: supportCount,
-        contradicting: contradictCount,
-        neutral: evidence.filter(
-          (item) => item.label === "NEUTRAL"
-        ).length,
+        papersFound:
+          livePapers.length,
+
+        evidenceFound:
+          evidence.length,
+
+        supporting,
+
+        contradicting,
+
+        neutral,
       },
     });
   } catch (error) {
     console.error(
-      "RealitySphere Europe PMC error:",
+      "RealitySphere retrieval error:",
       error
     );
 
     return NextResponse.json(
       {
         error:
-          "RealitySphere could not retrieve live scientific evidence.",
+          error instanceof Error
+            ? error.message
+            : "RealitySphere could not retrieve scientific evidence.",
       },
       { status: 500 }
     );
